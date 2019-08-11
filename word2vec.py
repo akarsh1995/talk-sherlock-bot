@@ -6,11 +6,7 @@ import math
 from random import randint
 import pickle
 import os
-import tensorflow.python.framework.dtypes
-
-# This Word2Vec implementation is largely based on this paper
-# https://papers.nips.cc/paper/5021-distributed-representations-of-words-and-phrases-and-their-compositionality.pdf
-# It's a bit old, but Word2Vec is still SOTA and relatively simple, so I'm going with it
+import config
 
 # Check out Tensorflow's documentation which is pretty good for Word2Vec
 # https://www.tensorflow.org/tutorials/word2vec
@@ -25,6 +21,7 @@ num_iterations = 100000
 # This function just takes in the conversation data and makes it
 # into one huge string, and then uses a Counter to identify words
 # and the number of occurences
+
 def process_dataset(filename):
     opened_file = open(filename, 'r')
     all_lines = opened_file.readlines()
@@ -62,27 +59,27 @@ def get_training_batch():
 
 continue_word2vec = True
 # Loading the data structures if they are present in the directory
-if os.path.isfile('word2vec_x_train.npy') and os.path.isfile('word2vec_y_train.npy') and os.path.isfile('word_list.txt'):
-    x_train = np.load('word2vec_x_train.npy')
-    y_train = np.load('word2vec_y_train.npy')
+if os.path.isfile(config.word2vec_x_train_filepath) and os.path.isfile(config.word2vec_y_train_filepath) and os.path.isfile(config.word_list_filepath):
+    x_train = np.load(config.word2vec_x_train_filepath)
+    y_train = np.load(config.word2vec_y_train_filepath)
     print('Finished loading training matrices')
-    with open("word_list.txt", "rb") as fp:
+    with open(config.word_list_filepath, "rb") as fp:
         word_list = pickle.load(fp)
     print('Finished loading word list')
 
 else:
-    full_corpus, dataset_dictionary = process_dataset('dataset/Sherlock/cleaned_data.txt')
+    full_corpus, dataset_dictionary = process_dataset(config.cleaned_conversation_txt)
     print('Finished parsing and cleaning dataset')
     word_list = list(dataset_dictionary.keys())
     create_own_vectors = input('Do you want to create your own vectors through Word2Vec (y/n)?')
     if create_own_vectors == 'y':
         x_train, y_train = create_training_matrices(dataset_dictionary, full_corpus)
         print('Finished creating training matrices')
-        np.save('word2vec_x_train.npy', x_train)
-        np.save('word2vec_y_train.npy', y_train)
+        np.save(config.word2vec_x_train_filepath, x_train)
+        np.save(config.word2vec_y_train_filepath, y_train)
     else:
         continue_word2vec = False
-    with open("word_list.txt", "wb") as fp:
+    with open(config.word_list_filepath, "wb") as fp:
         pickle.dump(word_list, fp)
 
 # If you do not want to create your own word vectors and you'd just like to 
@@ -92,17 +89,17 @@ if not continue_word2vec:
     sys.exit()
 
 num_training_examples = len(x_train)
-vocabSize = len(word_list)
+vocab_size = len(word_list)
 
 sess = tf.Session()
-embeddingMatrix = tf.Variable(tf.random_uniform([vocabSize, word_vec_dimensions], -1.0, 1.0))
-nceWeights = tf.Variable(tf.truncated_normal([vocabSize, word_vec_dimensions], stddev=1.0 / math.sqrt(word_vec_dimensions)))
-nceBiases = tf.Variable(tf.zeros([vocabSize]))
+embedding_matrix = tf.Variable(tf.random_uniform([vocab_size, word_vec_dimensions], -1.0, 1.0))
+nceWeights = tf.Variable(tf.truncated_normal([vocab_size, word_vec_dimensions], stddev=1.0 / math.sqrt(word_vec_dimensions)))
+nceBiases = tf.Variable(tf.zeros([vocab_size]))
 
 inputs = tf.placeholder(tf.int32, shape=[batch_size])
 outputs = tf.placeholder(tf.int32, shape=[batch_size, 1])
 
-embed = tf.nn.embedding_lookup(embeddingMatrix, inputs)
+embed = tf.nn.embedding_lookup(embedding_matrix, inputs)
 
 loss = tf.reduce_mean(
     tf.nn.nce_loss(weights=nceWeights,
@@ -110,16 +107,16 @@ loss = tf.reduce_mean(
                    labels=outputs,
                    inputs=embed,
                    num_sampled=num_negative_sample,
-                   num_classes=vocabSize))
+                   num_classes=vocab_size))
 
 optimizer = tf.train.GradientDescentOptimizer(learning_rate=1.0).minimize(loss)
 
 sess.run(tf.global_variables_initializer())
 for i in range(num_iterations):
     trainInputs, trainLabels = get_training_batch()
-    _, curLoss = sess.run([optimizer, loss], feed_dict={inputs: trainInputs, outputs: trainLabels})
+    _, current_loss = sess.run([optimizer, loss], feed_dict={inputs: trainInputs, outputs: trainLabels})
     if i % 10000 == 0:
-        print('Current loss is:', curLoss)
+        print('Current loss is:', current_loss)
 print('Saving the word embedding matrix')
-embedMatrix = embeddingMatrix.eval(session=sess)
-np.save('embeddingMatrix.npy', embedMatrix)
+embed_matrix = embedding_matrix.eval(session=sess)
+np.save(config.embedding_matrix_filepath, embed_matrix)

@@ -1,6 +1,7 @@
 import os
 import re
 import numpy as np
+import config
 
 
 def clean_subtitle(message):
@@ -16,16 +17,18 @@ def clean_subtitle(message):
 
 
 def startswith_alpha(line):
+    """only lines starting with alphabet"""
     return bool(re.match(r'^[A-z]', line))
 
 
 class SubCleaner:
+    """Cleans the subtitles files and concatenate all files into one."""
     files_paths = []
 
     def __init__(self, subtitles_dir):
         self.sub_dir = subtitles_dir
         self.files_paths = self.get_files_path()
-        self.cleaned_file = open(os.path.join(self.sub_dir, 'cleaned_data.txt'), 'w')
+        self.cleaned_file = open(os.path.join(self.sub_dir, config.cleaned_conversation_txt), 'w')
 
     def get_files_path(self):
         files = os.listdir(self.sub_dir)
@@ -52,12 +55,13 @@ class SubCleaner:
         self.cleaned_file.write(cleaned_line + '\n')
 
 
-sc = SubCleaner('./dataset/Sherlock')
+sc = SubCleaner(config.subtitles_dir)
 
 sc.clean_files()
 
 
 def create_conversation_dict(filepath):
+    """Creates dictionary of the response and message present in every second line"""
     conversation_dict = {}
     with open(filepath, 'r') as f:
         sherlock = f.readline()
@@ -70,4 +74,4 @@ def create_conversation_dict(filepath):
     return conversation_dict
 
 
-np.save('conversationDictionary.npy', create_conversation_dict('dataset/Sherlock/cleaned_data.txt'))
+np.save(config.conversation_dictionary_filepath, create_conversation_dict(config.cleaned_conversation_txt))

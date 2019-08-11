@@ -1,5 +1,7 @@
-models/*
+models/
 tensorboard/
+old_data/
+test.py
 # Created by https://www.gitignore.io/api/python,pycharm+all,jupyternotebooks
 # Edit at https://www.gitignore.io/?templates=python,pycharm+all,jupyternotebooks
 
@@ -226,3 +228,4 @@ dmypy.json
 .pyre/
 
 # End of https://www.gitignore.io/api/python,pycharm+all,jupyternotebooks
+/new_data/

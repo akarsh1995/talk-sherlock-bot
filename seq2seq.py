@@ -4,9 +4,9 @@ from random import randint
 import datetime
 import pickle
 import os
+import config
 
-# Removes an annoying Tensorflow warning
-from model_interface.model_interface import get_test_input, ids_to_sentence
+from model_interface.predict import pred as predict
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -21,15 +21,15 @@ def create_training_matrices(dialogue_conversation_dict_file, w_list, max_len):
         encoder_message = np.full(max_len, w_list.index('<pad>'), dtype='int32')
         decoder_message = np.full(max_len, w_list.index('<pad>'), dtype='int32')
         # Getting all the individual words in the strings
-        keySplit = key.split()
+        key_split = key.split()
         value_split = value.split()
-        keyCount = len(keySplit)
-        valueCount = len(value_split)
+        key_count = len(key_split)
+        value_count = len(value_split)
         # Throw out sequences that are too long or are empty
-        if keyCount > (max_len - 1) or valueCount > (max_len - 1) or valueCount == 0 or keyCount == 0:
+        if key_count > (max_len - 1) or value_count > (max_len - 1) or value_count == 0 or key_count == 0:
             continue
         # Integerize the encoder string
-        for key_index, word in enumerate(keySplit):
+        for key_index, word in enumerate(key_split):
             try:
                 encoder_message[key_index] = w_list.index(word)
             except ValueError:
@@ -108,15 +108,15 @@ num_layers_lstm = 3
 num_iterations = 500000
 
 # Loading in all the data structures
-with open("word_list.txt", "rb") as fp:
+with open(config.word_list_filepath, "rb") as fp:
     word_list = pickle.load(fp)
 
 vocab_size = len(word_list)
 
 # If you've run the entirety of word2vec.py then these lines will load in
 # the embedding matrix.
-if os.path.isfile('embeddingMatrix.npy'):
-    word_vectors = np.load('embeddingMatrix.npy')
+if os.path.isfile(config.embedding_matrix_filepath):
+    word_vectors = np.load(config.embedding_matrix_filepath)
     wordVecDimensions = word_vectors.shape[1]
 else:
     question = 'Since we cant find an embedding matrix, how many dimensions do you want your word vectors to be?: '
@@ -126,7 +126,7 @@ else:
 # and one to represent an end of sentence token
 pad_vector = np.zeros((1, wordVecDimensions), dtype='int32')
 eos_vector = np.ones((1, wordVecDimensions), dtype='int32')
-if os.path.isfile('embeddingMatrix.npy'):
+if os.path.isfile(config.embedding_matrix_filepath):
     word_vectors = np.concatenate((word_vectors, pad_vector), axis=0)
     word_vectors = np.concatenate((word_vectors, eos_vector), axis=0)
 
@@ -135,16 +135,17 @@ word_list.append('<pad>')
 word_list.append('<EOS>')
 vocab_size = vocab_size + 2
 
-if os.path.isfile('seq2seq_x_train.npy') and os.path.isfile('seq2seq_y_train.npy'):
-    x_train = np.load('seq2seq_x_train.npy')
-    y_train = np.load('seq2seq_y_train.npy')
+if os.path.isfile(config.seq2seq_x_train_filepath) and os.path.isfile(config.seq2seq_y_train_filepath):
+    x_train = np.load(config.seq2seq_x_train_filepath)
+    y_train = np.load(config.seq2seq_y_train_filepath)
     print('Finished loading training matrices')
     num_training_examples = x_train.shape[0]
 else:
-    num_training_examples, x_train, y_train = create_training_matrices('conversationDictionary.npy', word_list,
+    num_training_examples, x_train, y_train = create_training_matrices(config.conversation_dictionary_filepath,
+                                                                       word_list,
                                                                        max_encoder_length)
-    np.save('seq2seq_x_train.npy', x_train)
-    np.save('seq2seq_y_train.npy', y_train)
+    np.save(config.seq2seq_x_train_filepath, x_train)
+    np.save(config.seq2seq_y_train_filepath, y_train)
     print('Finished creating training matrices')
 
 tf.reset_default_graph()
@@ -181,8 +182,8 @@ sess.run(tf.global_variables_initializer())
 # Uploading results to Tensorboard
 tf.summary.scalar('Loss', loss)
 merged = tf.summary.merge_all()
-logdir = "tensorboard/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "/"
-writer = tf.summary.FileWriter(logdir, sess.graph)
+log_dir = os.path.join(config.tensor_board_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+writer = tf.summary.FileWriter(log_dir, sess.graph)
 
 # Some test strings that we'll use as input at intervals during training
 encoder_test_strings = ["murder is a mystry",
@@ -213,13 +214,8 @@ for i in range(num_iterations):
     if i % 25 == 0 and i != 0:
         num = randint(0, len(encoder_test_strings) - 1)
         print(encoder_test_strings[num])
-        inputVector = get_test_input(encoder_test_strings[num], word_list, max_encoder_length);
-        feed_dict = {encoder_inputs[t]: inputVector[t] for t in range(max_encoder_length)}
-        feed_dict.update({decoder_labels[t]: zero_vector for t in range(max_decoder_length)})
-        feed_dict.update({decoder_inputs[t]: zero_vector for t in range(max_decoder_length)})
-        feed_dict.update({feed_previous: True})
-        ids = (sess.run(decoder_prediction, feed_dict=feed_dict))
-        print(ids_to_sentence(ids, word_list))
+        input_string = encoder_test_strings[num]
+        print(predict(input_string))
 
     if i % 10000 == 0 and i != 0:
-        savePath = saver.save(sess, "models/pretrained_seq2seq.ckpt", global_step=i)
+        savePath = saver.save(sess, os.path.join(config.models_dir, "pretrained_seq2seq.ckpt"), global_step=i)
