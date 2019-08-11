@@ -1,13 +1,11 @@
-import tensorflow as tf
-import numpy as np
-from random import randint
 import datetime
-import pickle
 import os
+import pickle
+from random import randint
+import numpy as np
+import tensorflow as tf
 import config
-
-from model_interface.predict import pred as predict
-
+from model_interface.model_interface import get_test_input, ids_to_sentence
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
@@ -99,19 +97,11 @@ def translate_to_sentences(inputs, w_list, encoder=False):
 
 
 # Hyperparamters
-batch_size = 24
-max_encoder_length = 15
-max_decoder_length = max_encoder_length
-lstm_units = 112
-embedding_dim = lstm_units
-num_layers_lstm = 3
-num_iterations = 500000
-
+hp = config.HyperParameters()
+hp.vocab_size = hp.vocab_size() + 2
 # Loading in all the data structures
 with open(config.word_list_filepath, "rb") as fp:
     word_list = pickle.load(fp)
-
-vocab_size = len(word_list)
 
 # If you've run the entirety of word2vec.py then these lines will load in
 # the embedding matrix.
@@ -133,7 +123,6 @@ if os.path.isfile(config.embedding_matrix_filepath):
 # Need to modify the word list as well
 word_list.append('<pad>')
 word_list.append('<EOS>')
-vocab_size = vocab_size + 2
 
 if os.path.isfile(config.seq2seq_x_train_filepath) and os.path.isfile(config.seq2seq_y_train_filepath):
     x_train = np.load(config.seq2seq_x_train_filepath)
@@ -143,48 +132,34 @@ if os.path.isfile(config.seq2seq_x_train_filepath) and os.path.isfile(config.seq
 else:
     num_training_examples, x_train, y_train = create_training_matrices(config.conversation_dictionary_filepath,
                                                                        word_list,
-                                                                       max_encoder_length)
+                                                                       hp.max_encoder_length)
     np.save(config.seq2seq_x_train_filepath, x_train)
     np.save(config.seq2seq_y_train_filepath, y_train)
     print('Finished creating training matrices')
 
 tf.reset_default_graph()
 
-# Create the placeholders
-encoder_inputs = [tf.placeholder(tf.int32, shape=(None,)) for i in range(max_encoder_length)]
-decoder_labels = [tf.placeholder(tf.int32, shape=(None,)) for i in range(max_decoder_length)]
-decoder_inputs = [tf.placeholder(tf.int32, shape=(None,)) for i in range(max_decoder_length)]
+encoder_inputs = [tf.placeholder(tf.int32, shape=(None,)) for i in range(hp.max_encoder_length)]
+decoder_labels = [tf.placeholder(tf.int32, shape=(None,)) for i in range(hp.max_decoder_length)]
+decoder_inputs = [tf.placeholder(tf.int32, shape=(None,)) for i in range(hp.max_decoder_length)]
 feed_previous = tf.placeholder(tf.bool)
 
-encoder_lstm = tf.nn.rnn_cell.BasicLSTMCell(lstm_units, state_is_tuple=True)
-
-# encoder_lstm = tf.nn.rnn_cell.MultiRNNCell([singleCell]*num_layers_lstm, state_is_tuple=True)
-# Architectural choice of of whether or not to include ^
-
-decoder_outputs, decoderFinalState = tf.contrib.legacy_seq2seq.embedding_rnn_seq2seq(encoder_inputs, decoder_inputs,
-                                                                                     encoder_lstm,
-                                                                                     vocab_size, vocab_size,
-                                                                                     embedding_dim,
-                                                                                     feed_previous=feed_previous)
-
+encoder_lstm = tf.nn.rnn_cell.BasicLSTMCell(hp.lstm_units, state_is_tuple=True)
+# encoder_lstm = tf.nn.rnn_cell.MultiRNNCell([singleCell]*num_layer_lstm, state_is_tuple=True)
+decoder_outputs, decoder_final_state = tf.contrib.legacy_seq2seq.embedding_rnn_seq2seq(encoder_inputs, decoder_inputs,
+                                                                                       encoder_lstm,
+                                                                                       hp.vocab_size, hp.vocab_size,
+                                                                                       hp.lstm_units,
+                                                                                       feed_previous=feed_previous)
 decoder_prediction = tf.argmax(decoder_outputs, 2)
 
+
 loss_weights = [tf.ones_like(l, dtype=tf.float32) for l in decoder_labels]
-loss = tf.contrib.legacy_seq2seq.sequence_loss(decoder_outputs, decoder_labels, loss_weights, vocab_size)
+loss = tf.contrib.legacy_seq2seq.sequence_loss(decoder_outputs, decoder_labels, loss_weights, hp.vocab_size)
+
 optimizer = tf.train.AdamOptimizer(1e-4).minimize(loss)
 
-sess = tf.Session()
-saver = tf.train.Saver()
-# If you're loading in a saved model, uncomment the following line and comment out line 202
-# saver.restore(sess, tf.train.latest_checkpoint('models/'))
-sess.run(tf.global_variables_initializer())
-
-# Uploading results to Tensorboard
-tf.summary.scalar('Loss', loss)
-merged = tf.summary.merge_all()
-log_dir = os.path.join(config.tensor_board_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-writer = tf.summary.FileWriter(log_dir, sess.graph)
-
+#####
 # Some test strings that we'll use as input at intervals during training
 encoder_test_strings = ["murder is a mystry",
                         "mycroft is the government"
@@ -193,29 +168,47 @@ encoder_test_strings = ["murder is a mystry",
                         "Watson",
                         "Afghanistan"
                         ]
-
+#####
+log_dir = os.path.join(config.tensor_board_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 zero_vector = np.zeros(1, dtype='int32')
 
-for i in range(num_iterations):
+with tf.Session() as sess:
+    saver = tf.train.Saver()
+    # If you're loading in a saved model, uncomment the following line and comment out line 202
+    # saver.restore(sess, tf.train.latest_checkpoint('models/'))
+    sess.run(tf.global_variables_initializer())
 
-    encoder_train, decoder_target_train, decoder_input_train = get_training_batch(x_train, y_train, batch_size,
-                                                                                  max_encoder_length)
-    feed_dict = {encoder_inputs[t]: encoder_train[t] for t in range(max_encoder_length)}
-    feed_dict.update({decoder_labels[t]: decoder_target_train[t] for t in range(max_decoder_length)})
-    feed_dict.update({decoder_inputs[t]: decoder_input_train[t] for t in range(max_decoder_length)})
-    feed_dict.update({feed_previous: False})
+    # Uploading results to Tensorboard
+    tf.summary.scalar('Loss', loss)
+    merged = tf.summary.merge_all()
+    writer = tf.summary.FileWriter(log_dir, sess.graph)
 
-    curLoss, _, pred = sess.run([loss, optimizer, decoder_prediction], feed_dict=feed_dict)
+    for i in range(hp.num_iterations):
 
-    if i % 50 == 0:
-        print('Current loss:', curLoss, 'at iteration', i)
-        summary = sess.run(merged, feed_dict=feed_dict)
-        writer.add_summary(summary, i)
-    if i % 25 == 0 and i != 0:
-        num = randint(0, len(encoder_test_strings) - 1)
-        print(encoder_test_strings[num])
-        input_string = encoder_test_strings[num]
-        print(predict(input_string))
+        encoder_train, decoder_target_train, decoder_input_train = get_training_batch(x_train, y_train, hp.batch_size,
+                                                                                      hp.max_encoder_length)
+        feed_dict = {encoder_inputs[t]: encoder_train[t] for t in range(hp.max_encoder_length)}
+        feed_dict.update({decoder_labels[t]: decoder_target_train[t] for t in range(hp.max_decoder_length)})
+        feed_dict.update({decoder_inputs[t]: decoder_input_train[t] for t in range(hp.max_decoder_length)})
+        feed_dict.update({feed_previous: False})
 
-    if i % 10000 == 0 and i != 0:
-        savePath = saver.save(sess, os.path.join(config.models_dir, "pretrained_seq2seq.ckpt"), global_step=i)
+        curLoss, _, pred = sess.run([loss, optimizer, decoder_prediction], feed_dict=feed_dict)
+
+        if i % 50 == 0:
+            print('Current loss:', curLoss, 'at iteration', i)
+            summary = sess.run(merged, feed_dict=feed_dict)
+            writer.add_summary(summary, i)
+        if i % 25 == 0 and i != 0:
+            num = randint(0, len(encoder_test_strings) - 1)
+            print(encoder_test_strings[num])
+            inputVector = get_test_input(encoder_test_strings[num], word_list, hp.max_encoder_length)
+            feed_dict = {encoder_inputs[t]: inputVector[t] for t in range(hp.max_encoder_length)}
+            feed_dict.update({decoder_labels[t]: zero_vector for t in range(hp.max_decoder_length)})
+            feed_dict.update({decoder_inputs[t]: zero_vector for t in range(hp.max_decoder_length)})
+            feed_dict.update({feed_previous: True})
+            ids = (sess.run(decoder_prediction, feed_dict=feed_dict))
+            print(ids_to_sentence(ids, word_list))
+            # print(predictions)
+
+        if i % 10000 == 0 and i != 0:
+            savePath = saver.save(sess, os.path.join(config.models_dir, "pretrained_seq2seq.ckpt"), global_step=i)

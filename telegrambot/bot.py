@@ -2,8 +2,7 @@ from telegram.ext import Updater
 from telegram.ext import MessageHandler, Filters
 from telegram.ext import CommandHandler
 import logging
-
-from model_interface.predict import pred
+from model_interface.predict import predict_output
 import os
 
 updater = Updater(token=os.environ.get('TELEGRAM_BOT_TOKEN'), use_context=True)
@@ -21,7 +20,7 @@ dispatcher.add_handler(start_handler)
 
 
 def prediction(update, context):
-    reply = ' '.join(pred(update.message.text))
+    reply = ' '.join(predict_output(update.message.text))
     context.bot.send_message(chat_id=update.message.chat_id, text=reply)
 
 

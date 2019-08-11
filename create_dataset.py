@@ -28,7 +28,7 @@ class SubCleaner:
     def __init__(self, subtitles_dir):
         self.sub_dir = subtitles_dir
         self.files_paths = self.get_files_path()
-        self.cleaned_file = open(os.path.join(self.sub_dir, config.cleaned_conversation_txt), 'w')
+        self.cleaned_file = open(config.cleaned_conversation_txt, 'w')
 
     def get_files_path(self):
         files = os.listdir(self.sub_dir)

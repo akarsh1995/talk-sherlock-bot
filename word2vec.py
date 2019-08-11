@@ -54,6 +54,7 @@ def get_training_batch():
     num = randint(0, num_training_examples - batch_size - 1)
     arr = x_train[num:num + batch_size]
     labels = y_train[num:num + batch_size]
+    labels = np.array(labels)
     return arr, labels[:, np.newaxis]
 
 
