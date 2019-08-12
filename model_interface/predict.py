@@ -1,9 +1,12 @@
 import numpy as np
 import pickle
+import os
+import warnings
+warnings.filterwarnings("ignore")
 import tensorflow as tf
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)  # or any {DEBUG, INFO, WARN, ERROR, FATAL}
 from model_interface.model_interface import get_test_input, ids_to_sentence
 import config
-import os
 
 # Load in data structures
 with open(config.word_list_filepath, "rb") as fp:
@@ -33,6 +36,10 @@ decoder_prediction = tf.argmax(decoder_outputs, 2)
 # Start session and get graph
 # y, variables = model_interface.getmodel_interface(encoder_inputs, decoder_labels, decoder_inputs, feed_previous)
 zero_vector = np.zeros(1, dtype='int32')
+sess = tf.Session()
+if os.listdir(config.models_dir):
+    saver = tf.train.Saver()
+    saver.restore(sess, tf.train.latest_checkpoint(config.models_dir))
 
 
 def get_feed_dict(inputVector, max_encoder_length, max_decoder_length):
@@ -43,7 +50,7 @@ def get_feed_dict(inputVector, max_encoder_length, max_decoder_length):
     return feed_dict
 
 
-def pred(input_string, sess, decoder_pred=decoder_prediction):
+def pred(input_string, decoder_pred=decoder_prediction):
     inputVector = get_test_input(input_string, word_list, hp.max_encoder_length)
     feed_dict = get_feed_dict(inputVector, hp.max_encoder_length, hp.max_decoder_length)
     ids = (sess.run(decoder_pred, feed_dict=feed_dict))
@@ -51,9 +58,4 @@ def pred(input_string, sess, decoder_pred=decoder_prediction):
 
 
 def predict_output(input_string):
-    with tf.Session() as sess:
-        # Load in pretrained model
-        if os.listdir(config.models_dir):
-            saver = tf.train.Saver()
-            saver.restore(sess, tf.train.latest_checkpoint(config.models_dir))
-        return pred(input_string, sess, decoder_prediction)
+    return pred(input_string, decoder_prediction)
