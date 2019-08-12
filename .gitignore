@@ -1,5 +1,5 @@
-models/
-tensorboard/
+data/models/
+data/tensorboard/
 old_data/
 test.py
 .DS_Store
@@ -230,5 +230,5 @@ dmypy.json
 
 # End of https://www.gitignore.io/api/python,pycharm+all,jupyternotebooks
 /new_data/
-/models2/
+/new_data/models2/
 /run.sh

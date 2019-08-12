@@ -1,9 +1,9 @@
 import os
 import pickle
 data_dir = 'data'
-subtitles_dir = 'dataset/Sherlock'
-models_dir = 'models/'
-tensor_board_dir = 'tensorboard/'
+subtitles_dir = os.path.join(data_dir, 'Sherlock')
+models_dir = os.path.join(data_dir, 'models')
+tensor_board_dir = os.path.join(data_dir, 'tensorboard')
 
 if not os.path.exists(models_dir):
     os.mkdir(models_dir)
